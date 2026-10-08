@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quản lý đồ án tốt nghiệp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#edf1ef; --panel:#fff; --ink:#18302f; --muted:#5d7270; --line:#d9e2df;
+  --side:#0f3d3e; --side-ink:#cfe3df; --accent:#e0a526; --accent-ink:#2b1f00;
+  --ok:#1f7a4d; --ok-bg:#dff3e8; --wait:#8a5a00; --wait-bg:#fdf0cf; --bad:#a4262c; --bad-bg:#fbe1e2;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Be Vietnam Pro",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+aside{width:240px;background:var(--side);color:var(--side-ink);padding:28px 16px;flex-shrink:0}
+aside h1{font-size:17px;line-height:1.35;color:#fff;margin:0 8px 28px;font-weight:700}
+aside button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;font:inherit;padding:11px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px}
+aside button:hover{background:rgba(255,255,255,.08)}
+aside button.active{background:var(--accent);color:var(--accent-ink);font-weight:600}
+main{flex:1;padding:32px 40px;min-width:0}
+.head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.head h2{margin:0;font-size:24px}
+.tools{display:flex;gap:10px}
+input,select,textarea{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);width:100%}
+.tools input{width:260px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{font:inherit;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-weight:600;background:var(--side);color:#fff}
+.btn.gold{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.danger{background:var(--bad-bg);color:var(--bad)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);background:#f6f9f8;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.act{white-space:nowrap;text-align:right}
+td.act .btn{margin-left:6px}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:600}
+.PENDING{background:var(--wait-bg);color:var(--wait)} .APPROVED,.OPEN{background:var(--ok-bg);color:var(--ok)} .REJECTED,.CLOSED{background:var(--bad-bg);color:var(--bad)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+dialog{border:0;border-radius:14px;padding:0;width:min(520px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(15,40,40,.5)}
+form{padding:24px}
+form h3{margin:0 0 16px}
+label{display:block;font-size:14px;font-weight:600;margin:12px 0 5px}
+.foot{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+#toast{position:fixed;right:24px;bottom:24px;padding:12px 18px;border-radius:10px;color:#fff;font-weight:500;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;max-width:360px}
+#toast.show{opacity:1;transform:none} #toast.ok{background:var(--ok)} #toast.err{background:var(--bad)}
+@media(max-width:760px){body{flex-direction:column}aside{width:auto;display:flex;flex-wrap:wrap;gap:6px;padding:14px}aside h1{width:100%;margin:0 0 6px}aside button{width:auto}main{padding:20px 14px}.tools input{width:100%}.tools{width:100%}}
+@media(prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Quản lý đồ án tốt nghiệp</h1>
+  <nav id="nav"></nav>
+</aside>
+<main>
+  <div class="head">
+    <h2 id="title"></h2>
+    <div class="tools">
+      <input id="search" type="search" placeholder="Tìm kiếm…" aria-label="Tìm kiếm">
+      <button class="btn gold" id="addBtn"></button>
+    </div>
+  </div>
+  <div class="card"><table id="table"></table></div>
+</main>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <h3 id="dlgTitle"></h3>
+    <div id="fields"></div>
+    <div class="foot">
+      <button type="button" class="btn ghost" id="cancel">Hủy</button>
+      <button type="submit" class="btn">Lưu</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" role="status"></div>
+
+<script>
+// Đổi địa chỉ này nếu backend chạy ở port/host khác
+const API = "http://localhost:8080/api";
+
+const STATUS_REG = [["PENDING","Chờ duyệt"],["APPROVED","Đã duyệt"],["REJECTED","Từ chối"]];
+const STATUS_TOPIC = [["OPEN","Đang mở"],["CLOSED","Đã đóng"]];
+const label = (list, v) => (list.find(x => x[0] === v) || [v, v])[1];
+const pill = (list, v) => `<span class="pill ${v}">${label(list, v)}</span>`;
+
+const MODULES = {
+  students: {
+    title: "Sinh viên", nav: "Sinh viên", add: "Thêm sinh viên", noun: "sinh viên",
+    cols: [["studentCode","Mã SV"],["fullName","Họ tên"],["className","Lớp"],["email","Email"],["phone","Số điện thoại"]],
+    fields: [
+      {k:"studentCode", l:"Mã sinh viên", req:true},
+      {k:"fullName", l:"Họ và tên", req:true},
+      {k:"className", l:"Lớp"},
+      {k:"email", l:"Email", type:"email"},
+      {k:"phone", l:"Số điện thoại"}
+    ]
+  },
+  topics: {
+    title: "Đề tài", nav: "Đề tài", add: "Thêm đề tài", noun: "đề tài",
+    cols: [["topicCode","Mã đề tài"],["title","Tên đề tài"],["supervisor","Giảng viên hướng dẫn"],["maxStudents","SL tối đa"],
+           ["status","Trạng thái",r=>pill(STATUS_TOPIC,r.status)]],
+    fields: [
+      {k:"topicCode", l:"Mã đề tài", req:true},
+      {k:"title", l:"Tên đề tài", req:true},
+      {k:"description", l:"Mô tả", type:"textarea"},
+      {k:"supervisor", l:"Giảng viên hướng dẫn"},
+      {k:"maxStudents", l:"Số sinh viên tối đa", type:"number", def:1},
+      {k:"status", l:"Trạng thái", type:"select", options:()=>STATUS_TOPIC, def:"OPEN"}
+    ]
+  },
+  registrations: {
+    title: "Thông tin đăng ký đề tài", nav: "Đăng ký đề tài", add: "Thêm đăng ký", noun: "đăng ký",
+    cols: [["studentCode","Mã SV"],["studentName","Sinh viên"],["topicTitle","Đề tài"],["registeredAt","Ngày đăng ký"],
+           ["status","Trạng thái",r=>pill(STATUS_REG,r.status)],["note","Ghi chú"]],
+    fields: [
+      {k:"studentId", l:"Sinh viên", type:"select", req:true, lockOnEdit:true,
+        options:()=>cache.students.map(s=>[s.id, `${s.studentCode} - ${s.fullName}`])},
+      {k:"topicId", l:"Đề tài", type:"select", req:true, lockOnEdit:true,
+        options:()=>cache.topics.map(t=>[t.id, `${t.topicCode} - ${t.title}`])},
+      {k:"status", l:"Trạng thái", type:"select", options:()=>STATUS_REG, def:"PENDING", editOnly:true},
+      {k:"note", l:"Ghi chú", type:"textarea"}
+    ]
+  }
+};
+
+const cache = {students:[], topics:[], registrations:[]};
+let current = "students", editing = null;
+const $ = id => document.getElementById(id);
+
+async function call(path, method="GET", body){
+  let res;
+  try {
+    res = await fetch(API + path, {method, headers:{"Content-Type":"application/json"}, body: body ? JSON.stringify(body) : undefined});
+  } catch { throw new Error("Không kết nối được backend. Hãy kiểm tra Spring Boot đã chạy ở " + API); }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.success === false) throw new Error(json.message || "Có lỗi xảy ra (" + res.status + ")");
+  return json.data;
+}
+
+function toast(msg, type="ok"){
+  const t = $("toast"); t.textContent = msg; t.className = "show " + type;
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", 3200);
+}
+
+async function load(name){
+  try { cache[name] = await call("/" + name); } catch(e){ toast(e.message, "err"); cache[name] = []; }
+}
+
+function renderNav(){
+  $("nav").innerHTML = Object.entries(MODULES).map(([k,m]) =>
+    `<button data-k="${k}" class="${k===current?"active":""}">${m.nav}</button>`).join("");
+  $("nav").querySelectorAll("button").forEach(b => b.onclick = () => show(b.dataset.k));
+}
+
+async function show(name){
+  current = name; $("search").value = "";
+  const m = MODULES[name];
+  $("title").textContent = m.title; $("addBtn").textContent = m.add;
+  renderNav();
+  await load(name);
+  renderTable();
+}
+
+function renderTable(){
+  const m = MODULES[current], q = $("search").value.trim().toLowerCase();
+  const rows = cache[current].filter(r => !q || JSON.stringify(r).toLowerCase().includes(q));
+  const head = m.cols.map(c => `<th>${c[1]}</th>`).join("") + "<th></th>";
+  const body = rows.map(r => "<tr>" + m.cols.map(c =>
+    `<td>${c[2] ? c[2](r) : esc(r[c[0]])}</td>`).join("") +
+    `<td class="act"><button class="btn ghost sm" data-e="${r.id}">Sửa</button><button class="btn danger sm" data-d="${r.id}">Xóa</button></td></tr>`).join("");
+  $("table").innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>` +
+    (rows.length ? "" : `<tfoot><tr><td class="empty" colspan="${m.cols.length+1}">Chưa có ${m.noun} nào. Nhấn “${m.add}” để tạo mới.</td></tr></tfoot>`);
+  $("table").querySelectorAll("[data-e]").forEach(b => b.onclick = () => openForm(+b.dataset.e));
+  $("table").querySelectorAll("[data-d]").forEach(b => b.onclick = () => remove(+b.dataset.d));
+}
+
+const esc = v => v == null ? "" : String(v).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function openForm(id){
+  const m = MODULES[current];
+  editing = id || null;
+  if (current === "registrations") { await Promise.all([load("students"), load("topics")]); }
+  const rec = editing ? cache[current].find(r => r.id === editing) : {};
+  $("dlgTitle").textContent = (editing ? "Sửa " : "Thêm ") + m.noun;
+  $("fields").innerHTML = m.fields.filter(f => !(f.editOnly && !editing)).map(f => {
+    const val = rec[f.k] ?? (editing ? "" : (f.def ?? ""));
+    const dis = f.lockOnEdit && editing ? "disabled" : "";
+    const req = f.req ? "required" : "";
+    let input;
+    if (f.type === "select") {
+      input = `<select name="${f.k}" ${req} ${dis}>${f.req ? '<option value="">— Chọn —</option>' : ""}` +
+        f.options().map(o => `<option value="${o[0]}" ${String(o[0])===String(val)?"selected":""}>${esc(o[1])}</option>`).join("") + `</select>`;
+    } else if (f.type === "textarea") {
+      input = `<textarea name="${f.k}" rows="3">${esc(val)}</textarea>`;
+    } else {
+      input = `<input name="${f.k}" type="${f.type||"text"}" value="${esc(val)}" ${req} ${f.type==="number"?'min="1"':""}>`;
+    }
+    return `<label for="f_${f.k}">${f.l}</label>${input.replace("name=", `id="f_${f.k}" name=`)}`;
+  }).join("");
+  $("dlg").showModal();
+}
+
+$("form").onsubmit = async e => {
+  e.preventDefault();
+  const m = MODULES[current], body = {};
+  m.fields.forEach(f => {
+    const el = $("form").elements[f.k]; if (!el) return;
+    let v = el.value;
+    if (el.disabled) v = (cache[current].find(r => r.id === editing) || {})[f.k];
+    if (v === "" ) v = null;
+    else if (f.type === "number" || f.k.endsWith("Id")) v = Number(v);
+    body[f.k] = v;
+  });
+  try {
+    await call("/" + current + (editing ? "/" + editing : ""), editing ? "PUT" : "POST", body);
+    $("dlg").close();
+    toast(editing ? "Đã cập nhật" : "Đã tạo mới");
+    await load(current); renderTable();
+  } catch(err){ toast(err.message, "err"); }
+};
+
+async function remove(id){
+  if (!confirm("Xóa " + MODULES[current].noun + " này?")) return;
+  try { await call("/" + current + "/" + id, "DELETE"); toast("Đã xóa"); await load(current); renderTable(); }
+  catch(err){ toast(err.message, "err"); }
+}
+
+$("addBtn").onclick = () => openForm();
+$("cancel").onclick = () => $("dlg").close();
+$("search").oninput = renderTable;
+show("students");
+</script>
+</body>
+</html>
